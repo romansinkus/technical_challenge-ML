@@ -1,1 +1,56 @@
+###Rough code outline for knn regression problem using 5 predictors
+#Load libraries
 
+#Load data from source
+
+#Clean data
+
+#Split the data and separate training and testing data:
+housing_split <- initial_split(housing_data, prop = 0.75, strata = price)
+Housing_training <- training(housing_split)
+Housing_testing <- testing(housing_split)
+
+#Create model specification and recipe:
+housing_spec <- nearest_neighbor(weight_func = 'rectangular', neighbors = tune()) %>%
+set_engine("kknn") %>%
+set_mode('regression')
+housing_recipe <- recipe(predictor_1 ~ predictor_5, data = housing_training) %>%
+step_scale(all_predictors()) %>%
+step_center(all_predictors())
+
+#Perform cross validation with 5 folds:
+housing_vfold <- vfold_cv(housing_training, v = 5, strata = price)
+
+#Combine model specification and recipe using a workflow:
+housing_workflow <- workflow() %>%
+add_recipe(housing_recipe) %>%
+add_model(housing_spec)
+
+#Tune workflow:
+gridvals <- tibble(neighbors = seq(1,200))
+housing_results <- housing_workflow %>%
+tune_grid(resamples = housing_vfold, grid = gridvals) %>%
+collect_metrics()
+
+#Find best k-value:
+housing_min <- housing_results %>%
+filter(.metric == "rmse") %>%
+arrange(mean) %>%
+slice(1)
+k_min <- housing_min %>%
+pull(neighbors)
+
+#Repeat workflow analysis with new model specification using our new found k value:
+housing_best_spec <- nearest_neighbor(weight_func = 'rectangular', neighbors = k_min) %>%
+set_engine("kknn") %>%
+set_mode("regression")
+housing_best_fit <- workflow() %>%
+add_recipe(housing_recipe) %>%
+add_model(housing_best_spec) %>%
+fit(data = housing_training)
+
+#Display different metrics based on model:
+housing_summary <- housing_best_fit %>%
+predict(housing_testing) %>%
+bind_cols(housing_testing) %>%
+metrics(truth = time_hrs, estimate = .pred)
